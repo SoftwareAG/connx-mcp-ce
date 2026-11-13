@@ -1,0 +1,28 @@
+{
+  "executables": {
+    "docker": "/usr/bin/docker",
+    "podman": null
+  },
+  "commands": [
+    {
+      "args": [
+        "version",
+        "--format",
+        "{{json .}}"
+      ],
+      "returncode": 0,
+      "stdout": "{\"Client\": {\"Platform\": {\"Name\": \"Docker Engine - Community\"}, \"Version\": \"27.3.1\", \"ApiVersion\": \"1.47\", \"DefaultAPIVersion\": \"1.47\", \"GitCommit\": \"ce12230\", \"GoVersion\": \"go1.22.7\", \"Os\": \"linux\", \"Arch\": \"amd64\", \"BuildTime\": \"Fri Sep 20 11:41:00 2024\", \"Context\": \"default\"}, \"Server\": {\"Platform\": {\"Name\": \"Docker Engine - Community\"}, \"Components\": [{\"Name\": \"Engine\", \"Version\": \"27.3.1\", \"Details\": {\"ApiVersion\": \"1.47\", \"Arch\": \"amd64\", \"MinAPIVersion\": \"1.24\", \"Os\": \"linux\"}}, {\"Name\": \"containerd\", \"Version\": \"1.7.22\", \"Details\": {\"GitCommit\": \"7f7fdf5fed64eb6a7caf99b3e12efcf9d60e311c\"}}, {\"Name\": \"runc\", \"Version\": \"1.1.14\", \"Details\": {\"GitCommit\": \"v1.1.14-0-g2c9f560\"}}, {\"Name\": \"docker-init\", \"Version\": \"0.19.0\", \"Details\": {\"GitCommit\": \"de40ad0\"}}], \"Version\": \"27.3.1\", \"ApiVersion\": \"1.47\", \"MinAPIVersion\": \"1.24\", \"GitCommit\": \"41ca978\", \"GoVersion\": \"go1.22.7\", \"Os\": \"linux\", \"Arch\": \"amd64\", \"KernelVersion\": \"6.8.0-45-generic\", \"BuildTime\": \"2024-09-20T11:41:00.000000000+00:00\"}}\n",
+      "stderr": ""
+    },
+    {
+      "args": [
+        "compose",
+        "version",
+        "--short"
+      ],
+      "returncode": 0,
+      "stdout": "1.29.2\n",
+      "stderr": ""
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "executables": {
+    "docker": null,
+    "podman": "/usr/bin/podman"
+  },
+  "commands": []
+}

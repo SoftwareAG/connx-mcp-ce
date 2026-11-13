@@ -1,0 +1,102 @@
+[project]
+name = "connx-mcp-ce"
+version = "15.0.0.26003"
+description = "connx-mcp-ce: the administrator's CLI for setting up and running the CONNX MCP Server Community Edition."
+license = "Apache-2.0"
+license-files = ["LICENSE", "NOTICE"]
+requires-python = ">=3.14"
+dependencies = [
+    "typer>=0.16",
+    "questionary>=2.1",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+connx-mcp-ce = "connx_mcp.cli:app"
+
+[build-system]
+requires = ["uv_build>=0.8,<0.14"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+# The distribution is connx-mcp-ce; the import package keeps its name.
+module-name = "connx_mcp"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.1",
+    "pytest-mock>=3.15.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.9.0",
+    "ty>=0.0.21",
+    "pydoclint>=0.6",
+    "pre-commit>=4.5.1",
+    "cryptography>=44",
+    "actionlint-py>=1.7.12",
+]
+# The release build's own environment, on top of the runtime dependencies Nuitka compiles in:
+# `uv run --locked --no-dev --no-editable --group build python scripts/release/build_release.py build`
+# (not editable: Nuitka includes connx-mcp-ce's metadata, for `--version`, only from a regular install).
+# patchelf: Nuitka's standalone mode needs it on Linux; zstandard: compresses the onefile payload.
+build = [
+    "nuitka>=2.8",
+    "patchelf>=0.17; sys_platform == 'linux'",
+    "zstandard>=0.23",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py314"
+# The demo assets are the server team's files, embedded verbatim; a refresh must not need edits.
+extend-exclude = ["src/connx_mcp/demo/assets"]
+
+[tool.ruff.lint]
+# E/F/I: standard pycodestyle/pyflakes/isort, D: pydocstyle docstring rules
+select = ["E", "F", "I", "D"]
+# E501: line-too-long handled by formatter
+# D107: pydoclint DOC301 enforces Google convention - combine __init__ docs into the class docstring
+ignore = ["E501", "D107"]
+
+[tool.ruff.lint.pydocstyle]
+# Enforce Google-style docstrings (Sphinx napoleon convention)
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+# Skip docstring rules for tests
+"tests/**" = ["D"]
+"scripts/**/tests/**" = ["D"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.pydoclint]
+# Sphinx-Google docstring style - Enforces semantic agreement between the
+# docstring and the function signature: Args lists the right params, Returns
+# is present if the function returns, Raises matches actual raises, etc.
+style = "google"
+# .scratch/ holds gitignored throwaway material (design drafts, repro scripts, vendored
+# copies) that is never committed, so it must not be able to fail the pre-commit hook.
+exclude = '\.venv|tests/|\.scratch/'
+arg-type-hints-in-docstring = true
+arg-type-hints-in-signature = true
+# Allow Returns: to be omitted when the function only returns None.
+require-return-section-when-returning-nothing = false
+
+[tool.ty.environment]
+extra-paths = ["./src"]
+
+[tool.ty.src]
+# The demo assets are the server team's files, embedded verbatim and run in the seed image.
+exclude = ["tests/", "src/connx_mcp/demo/assets/"]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
+testpaths = ["tests", "scripts"]
+addopts = "-m 'not live and not release_scripts'"
+markers = [
+    "live: needs Docker and the real image or demo stack; run from the host with `-m live`",
+    "binary: starts the built binary named by CONNX_MCP_BINARY; run with `-m binary` after a release build",
+    "release_scripts: the release CLI against temporary repositories with real git and uv; run with `-m release_scripts`",
+]

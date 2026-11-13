@@ -1,0 +1,43 @@
+# users.yaml - The demo stack's users (connx-mcp-ce).
+#
+# Description:
+#   The people who sign in to the demo stack's Keycloak and dex, and the CONNX login each one's queries run under.
+#   DEMO ONLY - never production: every password here is throwaway.
+#
+# Copyright:
+#   Copyright 2026 Software GmbH
+#   Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance
+#   with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
+#   Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+#   on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+#   for the specific language governing permissions and limitations under the License.
+#
+# Each person signs in to Keycloak and dex with their name as both username and password (dex asks for the
+# email, <name>@example.com). Their queries run under the CONNX login you map them to below; those logins come
+# from the CONNX Data Dictionary (CDD) your server uses - this file names them, it never creates them.
+#
+# Map at least one person before `connx-mcp-ce start-demo`: uncomment their `connx:` line and fill in a login from
+# your CDD. A person with no `connx:` line signs in but is refused by the server (no Credential Vault entry).
+#
+# Per identity you may also set: password, email, providers ([keycloak, dex]); any password as
+# `password_env: VARIABLE` to read it from that environment variable instead. On `connx:` the keys are
+# username, password (or password_env) and restricted (true when the CDD refuses that login some tables).
+# Add, rename or remove people freely; each needs its own name and id (any unique string). Changing an id
+# re-keys that person's Credential Vault entry.
+
+identities:
+  - name: alice
+    id: 4bb91078-2e33-4fe4-b386-bdf1d51f1e6a
+    # connx: { username: <CONNX login>, password: <its password> }
+
+  - name: bob
+    id: 4db38ff3-5a11-490a-8484-05821dc2134e
+    # connx: { username: <CONNX login>, password: <its password> }
+
+  - name: carol
+    id: c5cad2a2-67a1-4b33-ba49-ea02d214ac2a
+    # connx: { username: <CONNX login>, password: <its password> }
+
+  - name: dave
+    id: 2464584c-7aac-4b8a-b021-3be750bafb2a
+    # connx: { username: <CONNX login>, password: <its password> }

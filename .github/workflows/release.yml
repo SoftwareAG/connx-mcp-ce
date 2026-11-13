@@ -1,0 +1,225 @@
+# Release: builds the connx-mcp-ce binaries for Linux x64 and Windows x64 when a release tag is pushed, and
+# attaches them with their SHA-256 sums, the third-party notices, LICENSE and NOTICE to a draft GitHub Release.
+# The tag is the release's Product version, such as 15.0.0.26004, with no `v`. The draft stays a draft: the
+# maintainer tests its binaries first, and only then makes it public.
+#
+# Copyright:
+#     Copyright 2026 Software GmbH
+#     Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in compliance
+#     with the License. You may obtain a copy of the License at https://www.apache.org/licenses/LICENSE-2.0
+#     Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
+#     on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
+#     for the specific language governing permissions and limitations under the License.
+name: release
+
+on:
+  push:
+    tags: ["*.*.*.*"]
+
+permissions:
+  contents: read
+
+jobs:
+  # The tag must be the Product version in pyproject.toml, so a release never carries binaries of another version.
+  version:
+    name: tag matches the package version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.1"
+      - run: uv run --no-project python scripts/release/build_release.py check-tag "$GITHUB_REF_NAME"
+
+  tests:
+    name: tests (${{ matrix.os }})
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.1"
+      # Unit and contract tests; `live` tests (real Docker) are deselected by pyproject's addopts.
+      - name: Unit and contract tests
+        run: uv run --locked pytest -v
+
+  # The Linux binary links the glibc of the system it is built on: manylinux_2_34 (AlmaLinux 9, glibc 2.34) makes
+  # it run on RHEL 9 and newer.
+  build-linux:
+    name: build (linux-x64)
+    needs: tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    container:
+      image: quay.io/pypa/manylinux_2_34_x86_64@sha256:3cb61cd981757b4ed54bc658f8bd0f4e829af49372cf8cf6c237268dacf168d0
+    # Only the image's own Python (.python-version's patch version), whose static libpython Nuitka links: a Python
+    # uv downloaded instead would build a different binary, so a patch version the image lacks fails the build.
+    env:
+      UV_PYTHON_PREFERENCE: only-system
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.1"
+      # manylinux ships its Pythons without a shared libpython; Nuitka links the static one, packed in the image.
+      - name: Unpack the static libpython
+        run: cd /opt/_internal && tar xf static-libs-for-embedding-only.tar.xz
+      - name: Build the binary, its sum, notices and start-up time
+        shell: bash
+        env:
+          UV_PROJECT_ENVIRONMENT: .build-venv
+        run: >-
+          uv run --locked --no-dev --no-editable --group build python scripts/release/build_release.py build
+          --out dist --platform linux-x64 --build-id "${GITHUB_SHA::12}"
+      # Daemon-free checks of the built binary: help, configure, configure-demo and the missing-Docker failure.
+      - name: Daemon-free binary checks
+        shell: bash
+        env:
+          CONNX_MCP_BINARY: dist/connx-mcp-ce-linux-x64
+        run: uv run --locked pytest -v -m binary
+      - name: Record start-up time
+        shell: bash
+        run: |
+          {
+            echo "### Start-up time, linux-x64"
+            echo '```json'
+            cat dist/startup-linux-x64.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linux-x64
+          path: |
+            dist/connx-mcp-ce-linux-x64
+            dist/connx-mcp-ce-linux-x64.sha256
+            dist/notices-linux-x64.json
+            dist/startup-linux-x64.json
+          if-no-files-found: error
+
+  # The oldest supported Linux: the binary's daemon-free checks on RHEL 9's own userland (UBI 9, glibc 2.34).
+  rhel9-check:
+    name: binary checks (RHEL 9)
+    needs: build-linux
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    container:
+      image: registry.access.redhat.com/ubi9/ubi@sha256:16e9e43d99e181463513cc84a514859b1abb9460f1c4d9e208da4b4e51cd5cc3
+    steps:
+      - name: Tools the actions need
+        run: dnf install -y --setopt=install_weak_deps=False git tar gzip
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.1"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: linux-x64
+          path: dist
+      - name: Daemon-free binary checks on glibc 2.34
+        shell: bash
+        env:
+          CONNX_MCP_BINARY: dist/connx-mcp-ce-linux-x64
+        run: |
+          ldd --version | sed -n 1p
+          chmod +x dist/connx-mcp-ce-linux-x64
+          uv run --locked pytest -v -m binary
+
+  build-windows:
+    name: build (windows-x64)
+    needs: tests
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.1"
+      - name: Build the binary, its sum, notices and start-up time
+        shell: bash
+        env:
+          UV_PROJECT_ENVIRONMENT: .build-venv
+        run: >-
+          uv run --locked --no-dev --no-editable --group build python scripts/release/build_release.py build
+          --out dist --platform windows-x64 --build-id "${GITHUB_SHA::12}" --require-msvc
+      # Daemon-free checks of the built binary: help, configure, configure-demo and the missing-Docker failure.
+      - name: Daemon-free binary checks
+        shell: bash
+        env:
+          CONNX_MCP_BINARY: dist/connx-mcp-ce-windows-x64.exe
+        run: uv run --locked pytest -v -m binary
+      - name: Record start-up time
+        shell: bash
+        run: |
+          {
+            echo "### Start-up time, windows-x64"
+            echo '```json'
+            cat dist/startup-windows-x64.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-x64
+          path: |
+            dist/connx-mcp-ce-windows-x64.exe
+            dist/connx-mcp-ce-windows-x64.exe.sha256
+            dist/notices-windows-x64.json
+            dist/startup-windows-x64.json
+          if-no-files-found: error
+
+  release:
+    name: GitHub Release
+    needs: [rhel9-check, build-windows]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      # The job holds a write token: keep it out of .git/config, where any later step could read it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.1"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS and THIRD-PARTY-NOTICES
+        run: |
+          uv run --no-project python scripts/release/build_release.py checksums \
+            dist/connx-mcp-ce-linux-x64 dist/connx-mcp-ce-windows-x64.exe --output dist/SHA256SUMS
+          uv run --no-project python scripts/release/build_release.py render-notices \
+            dist/notices-linux-x64.json dist/notices-windows-x64.json --output dist/THIRD-PARTY-NOTICES
+      # A draft: nobody can download it until it is published. A re-run replaces the files of its own draft, and
+      # never changes a release that is already published. Only "release not found" creates the draft: any other
+      # failed look-up (a rate limit, the network) fails the step, so a re-run never leaves two drafts on one tag.
+      - name: Attach the files to the draft release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=(dist/connx-mcp-ce-linux-x64 dist/connx-mcp-ce-windows-x64.exe dist/SHA256SUMS
+            dist/THIRD-PARTY-NOTICES LICENSE NOTICE)
+          if draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft \
+              2> view.err); then
+            if [ "$draft" != true ]; then
+              echo "::error::release $GITHUB_REF_NAME is published: a re-run never changes it"
+              exit 1
+            fi
+            gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --clobber "${files[@]}"
+          elif grep -q "release not found" view.err; then
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+              --title "$GITHUB_REF_NAME" --generate-notes "${files[@]}"
+          else
+            cat view.err >&2
+            echo "::error::could not look up release $GITHUB_REF_NAME: re-run the job"
+            exit 1
+          fi

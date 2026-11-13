@@ -1,0 +1,114 @@
+# CONNX MCP Server test stack: Keycloak, dex and HashiCorp Vault (with its seed), one Compose project.
+#
+# TEST AND DEMO ONLY - never part of the product image: the product's Dockerfile copies an explicit
+# list of the server's own files, so nothing in this directory can reach the product image.
+#
+# Do not run `docker compose` on this file directly: startContainers.sh loads test-stack.env, renders
+# generated/ (realm, dex config, Vault entries, TLS) from the users file, then calls Compose. Stop with
+# stopContainers.sh.
+# The services reach each other by service name; no host networking (Docker Desktop needs it opted in).
+#
+# Throwaway test material only: weak fixed credentials, in-memory Vault, no backups. See README.md.
+
+name: ${COMPOSE_PROJECT_NAME:-connx-mcp-test-stack}
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.6
+    restart: unless-stopped
+    command:
+      - start-dev
+      - --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      # Pin the hostname so the `iss` in every minted token is byte-identical to the configured
+      # MCP_OAUTH_REALM_URL, however Keycloak was dialled (localhost, the machine's name, an address).
+      # Left to derive itself from the request, Keycloak issues tokens whose issuer depends on how it
+      # was dialled, and verification then fails for reasons that look like a bug in the server.
+      KC_HOSTNAME: http://${STACK_HOST:-localhost}:${KEYCLOAK_PORT:-8080}
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_ENABLED: "true"
+    ports:
+      - "${KEYCLOAK_PORT:-8080}:8080"
+    volumes:
+      - ./generated/keycloak/realm-connx-mcp.json:/opt/keycloak/data/import/realm-connx-mcp.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/8080 && echo -e 'GET /realms/connx-mcp HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | head -1 | grep -q '200'"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+
+  dex:
+    # Pinned to the release the generic-OIDC slice was read against (dex v2.45.1, 2026-03-03, Apache-2.0).
+    image: ghcr.io/dexidp/dex:v2.45.1
+    restart: unless-stopped
+    command:
+      - dex
+      - serve
+      - /etc/dex/config.yaml
+    ports:
+      - "${DEX_PORT:-5556}:5556"
+    volumes:
+      - ./generated/dex/config.yaml:/etc/dex/config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5556/dex/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  vault:
+    image: hashicorp/vault:1.20
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    environment:
+      # Root token. Throwaway by design - the server under test never uses it; the seed mints the
+      # read-only token the server runs with, so the policy in the customer doc is what the tests exercise.
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_ROOT_TOKEN:-connx-mcp-dev-root}
+      # Dev mode's own plain-http listener stays inside the container (healthcheck only). Port 8300, not
+      # 8201: 8201 is the cluster port of the TLS listener below.
+      VAULT_DEV_LISTEN_ADDRESS: 127.0.0.1:8300
+      # The listener clients use: TLS, with the certificate startContainers.sh keeps in generated/tls.
+      # The MCP server accepts plain http for VAULT_ADDR only on loopback, so a remote server needs this.
+      VAULT_LOCAL_CONFIG: '{"listener": [{"tcp": {"address": "0.0.0.0:8200", "tls_cert_file": "/vault/tls/server.pem", "tls_key_file": "/vault/tls/server-key.pem"}}]}'
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+    volumes:
+      - ./generated/tls:/vault/tls:ro
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8300"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # Long-running: writes the HashiCorp Vault entries render.py made from the users file (generated/vault/entries.json)
+  # once Vault is healthy, then again whenever the read-only token is gone (dev mode is in-memory, so any
+  # Vault restart empties it). Healthy once the first seed has succeeded. The image also runs render.py and
+  # make-tls.sh for startContainers.sh.
+  seed:
+    build:
+      context: ./vault
+      dockerfile: Dockerfile.seed
+    image: ${COMPOSE_PROJECT_NAME:-connx-mcp-test-stack}-seed:local
+    restart: unless-stopped
+    # seed.sh --loop is PID 1, which ignores SIGTERM: without an init Docker waits out its stop timeout.
+    init: true
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: https://vault:8200
+      VAULT_CACERT: /tls/ca.pem
+      VAULT_ROOT_TOKEN: ${VAULT_ROOT_TOKEN:-connx-mcp-dev-root}
+      VAULT_READ_TOKEN: ${VAULT_READ_TOKEN:-connx-mcp-dev-read}
+      ENTRIES_FILE: /entries/entries.json
+    volumes:
+      - ./generated/tls:/tls:ro
+      - ./generated/vault:/entries:ro
+    command: ["/seed/seed.sh", "--loop"]
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/seeded"]
+      interval: 5s
+      timeout: 3s
+      retries: 36

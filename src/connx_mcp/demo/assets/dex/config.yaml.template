@@ -1,0 +1,57 @@
+# Disposable dex for CONNX MCP Server development and the `oauth_live` tests.
+#
+# TEST AND DEMO ONLY - never part of the product image (see ../docker-compose.yml).
+#
+# A template: startContainers.sh renders it to generated/dex/config.yaml, replacing each @@...@@
+# placeholder from test-stack.env. Nothing in this file is a secret. Every value is throwaway and
+# deliberately weak. The MCP server repository's unit tests pin what the server and the live layer
+# assume of the rendered file.
+
+# The `iss` of every token dex mints, and the origin the server and the browser both dial:
+# http://<STACK_HOST>:<DEX_PORT>/dex, byte-identical where a token is minted and where it is verified.
+issuer: @@DEX_ISSUER@@
+
+# No volume, no database: the whole provider is this file, and a restart discards everything.
+storage:
+  type: memory
+
+web:
+  http: 0.0.0.0:5556
+
+# The confidential client this server fronts in proxy mode. dex has no Dynamic Client
+# Registration, so this is the registration a deployer would otherwise create by hand.
+staticClients:
+  - id: connx-mcp
+    name: CONNX MCP Server
+    secret: connx-mcp-secret
+    redirectURIs:
+      - @@MCP_PUBLIC_BASE_URL@@/auth/callback
+
+# The local password database, so a browser can sign in and the oauth_live layer can mint
+# a real user token with grant_type=password - which dex serves only for the connector
+# named by passwordConnector. Its users, staticPasswords, are rendered from the users file
+# (render.py): a bcrypt hash of each OAuth password, userID the identity's pinned id.
+enablePasswordDB: true
+staticPasswords: []
+
+oauth2:
+  passwordConnector: local
+  # This server hosts the per-client consent page the specification requires of a proxy;
+  # dex's own "Grant access" page would be a second one on the same journey.
+  skipApprovalScreen: true
+
+# Refresh on a short clock, so the refresh path is exercised by a test rather than observed
+# by a session that happens to run past expiry (which is how the Cognito refresh was seen).
+# A refresh token needs the `offline_access` scope on the request that minted it.
+#
+# idTokens must stay above the MCP client's proactive-refresh margin. At 2m Claude Code
+# refreshed before every request - six rotations in two seconds (2026-09-11) - because a
+# 120 s token is already inside its margin the moment it is minted; only reuseInterval kept
+# the parallel connections from failing. 10m is short enough to see an expiry-driven refresh
+# in one sitting and long enough that the traffic in between looks like a real session.
+expiry:
+  idTokens: 10m
+  refreshTokens:
+    reuseInterval: 3s
+    validIfNotUsedFor: 10m
+    absoluteLifetime: 1h

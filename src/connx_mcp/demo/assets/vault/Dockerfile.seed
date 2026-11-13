@@ -1,0 +1,9 @@
+# The image the compose `seed` service runs in. TEST AND DEMO ONLY - never part of the product image.
+# The HashiCorp Vault image carries none of the tools the scripts need, so this adds them to a pinned Alpine:
+# bash, curl and jq for seed.sh, openssl for make-tls.sh, Python 3 with PyYAML and bcrypt for ../render.py.
+# seed.sh and make-tls.sh are copied in; render.py and users_file.py are mounted from the stack directory when
+# startContainers.sh renders. Either way the stack needs nothing from outside its own directory.
+FROM alpine:3.21
+RUN apk add --no-cache bash curl jq openssl python3 py3-yaml py3-bcrypt
+COPY seed.sh make-tls.sh /seed/
+RUN chmod 755 /seed/seed.sh /seed/make-tls.sh

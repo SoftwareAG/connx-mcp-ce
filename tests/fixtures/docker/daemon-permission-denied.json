@@ -1,0 +1,28 @@
+{
+  "executables": {
+    "docker": "/usr/bin/docker",
+    "podman": null
+  },
+  "commands": [
+    {
+      "args": [
+        "version",
+        "--format",
+        "{{json .}}"
+      ],
+      "returncode": 1,
+      "stdout": "{\"Client\": {\"Platform\": {\"Name\": \"Docker Engine - Community\"}, \"Version\": \"27.3.1\", \"ApiVersion\": \"1.47\", \"DefaultAPIVersion\": \"1.47\", \"GitCommit\": \"ce12230\", \"GoVersion\": \"go1.22.7\", \"Os\": \"linux\", \"Arch\": \"amd64\", \"BuildTime\": \"Fri Sep 20 11:41:00 2024\", \"Context\": \"default\"}, \"Server\": null}\n",
+      "stderr": "permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get \"http://%2Fvar%2Frun%2Fdocker.sock/v1.47/version\": dial unix /var/run/docker.sock: connect: permission denied\n"
+    },
+    {
+      "args": [
+        "compose",
+        "version",
+        "--short"
+      ],
+      "returncode": 0,
+      "stdout": "2.29.7\n",
+      "stderr": ""
+    }
+  ]
+}

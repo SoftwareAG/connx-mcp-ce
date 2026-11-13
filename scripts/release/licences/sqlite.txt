@@ -1,0 +1,6 @@
+SQLite is in the public domain. The author disclaims copyright to its source code and, in place of a legal notice,
+gives this blessing:
+
+    May you do good and not evil.
+    May you find forgiveness for yourself and forgive others.
+    May you share freely, never taking more than you give.

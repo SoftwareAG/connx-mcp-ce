@@ -1,0 +1,19 @@
+# What a local build and test run leave in the tree. Nuitka's build directories under dist/ record the builder's
+# whole environment, so none of this may reach a commit.
+
+# Release builds (scripts/release/build_release.py, the Linux build in Docker)
+dist/
+dist-*/
+
+# Virtual environments (uv's default, the release build's own)
+.venv/
+.build-venv/
+
+# Python and tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# macOS
+.DS_Store

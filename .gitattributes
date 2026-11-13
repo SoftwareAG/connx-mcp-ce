@@ -1,0 +1,5 @@
+# Every checkout, Windows included, writes text files with LF: the public export copies the working tree, and a
+# CRLF NOTICE or script would be published as such. No tracked file needs CRLF (no .bat, .cmd or .ps1).
+* text=auto eol=lf
+# The demo assets are embedded byte for byte: a CRLF checkout would break the seed scripts.
+src/connx_mcp/demo/assets/** -text
